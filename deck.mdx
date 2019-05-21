@@ -1,3 +1,11 @@
+import { Notes } from "mdx-deck";
+
+import { Horizontal } from "mdx-deck/layouts";
+import futures from "@mdx-deck/themes/future";
+import highlight from "@mdx-deck/themes/syntax-highlighter-prism";
+import theme from "./theme.js";
+
+export const themes = [theme, futures, highlight];
 
 # Astroturf!
 
@@ -5,22 +13,307 @@
 
 # (but first)
 
-<img style={{ height: '30%', width: '30%'}} src="https://raw.githubusercontent.com/css-modules/logos/master/css-modules-logo.png" />
+<img
+  style={{
+    height: "30%",
+    width: "30%",
+    backgroundColor: "white"
+  }}
+  src="https://raw.githubusercontent.com/css-modules/logos/master/css-modules-logo.png"
+/>
 
 ---
-import { Flex } from 'mdx-deck/layouts'
 
-<Flex>
+import Split from "./Split";
+
+<Split transition="👉">
 
 ```css
+/* text.module.css */
+
+.heavy {
+  font-weight: 700;
+}
+
 .title {
-  background-color: red;
+  color: white;
+}
+
+.heading {
+  composes: title heavy;
+  margin-bottom: 10px;
 }
 ```
 
-## Meow
+```css
+._heavy-t0gZ1 {
+  font-weight: 700;
+}
+._title-t0gZ1 {
+  color: white;
+}
+._heading-20g65 {
+  margin-bottom: 10px;
+}
+```
 
-- gasdg
-- ag
+```json
+{
+  "heavy": "_heavy-t0gZ",
+  "title": "_title-t0gZ1",
+  "heading": "_heading-20g65 _heavy-t0gZ1 _title-t0gZ1"
+}
+```
 
-</Flex>
+</Split>
+
+<Notes>
+  Effectively you get two files:
+
+- the plain css file with mangled classNames
+
+- json file that contains the mapping of the mangled class names to the original
+  ones: e.g. 'heavy' -> '\_23_aKvs-b8bW2Vg3fwHozO'
+
+</Notes>
+
+---
+
+```jsx
+import { heading } from "./text.module.css";
+
+return function Heading() {
+  return (
+    <h2 className={heading}>A Bold Title</h2>
+  );
+};
+```
+
+_becomes_
+
+```html
+<h2
+  class="_heading-20g65 _heavy-t0gZ1 _title-t0gZ1"
+>
+  A Bold Title
+</h2>
+```
+
+<Notes>
+  When you import the css file, what you get is
+  actually the JSON file containing the mappings
+</Notes>
+
+---
+
+## PRO TIP
+
+CSS Modules invented a little DSL for describing which things are "exports" and which are
+are "imports".
+
+Generally this is used for importing and exporting classNames but…
+
+**you can use it _for any value_**
+
+---
+
+`breakpoints.module.css`
+
+```css
+:export {
+  medium: 998px;
+  small: 746px;
+}
+```
+
+`display-utils.module.css`
+
+```css
+:import("./breakpoint.module.css") {
+  breakpoint: small;
+}
+
+@media (max-width: breakpoint) {
+  .display-mobile {
+    display: block;
+  }
+}
+```
+
+<Notes>
+  You almost never see this format b/c it ends up
+  being an intermediary compile step. For instance
+  css-loader looks for imports and exports in
+  order to create the JSON mapping, and then
+  removes the fake psuedo selectors from the css.
+</Notes>
+
+---
+
+## Ok now astroturf
+
+Built on top of css-modules, the core technolody is you write a css file in
+a tagged template string and astroturf turns that into a REAL css file and _replaces_
+the template with an import to that file.
+
+---
+
+<Split transition="👉">
+
+```jsx
+import { css } from 'astroturf'
+
+const color = 'white';
+
+const styles = css`
+  .title {
+    color: $\{color};
+  }
+`
+
+<h2 classNames={styles.title} />
+```
+
+```jsx
+const styles = require("./Title-styles.module.css");
+
+const color = "white";
+
+const title = <h2 classNames={styles.title} />;
+```
+
+<small>&</small>
+
+```css
+.title {
+  color: white;
+}
+```
+
+</Split>
+
+---
+
+Uses babel plugin to manpulate the code via an AST
+
+```json
+{
+  "type": "TaggedTemplateExpression",
+  "tag": {
+    "type": "Identifier",
+    "name": "css"
+  },
+  "quasi": {
+    "type": "TemplateLiteral",
+    "expressions": [],
+    "quasis": [
+      {
+        "type": "TemplateElement",
+        "value": {
+          "raw": "\n  .title {\n    color: white;\n  }\n"
+        },
+        "tail": true
+      }
+    ]
+  }
+}
+```
+
+---
+
+- Analysis if there are any interpolations and whether they are statically
+  evaluatable
+
+- We generate the string of css and save to a css file
+
+- replace the tagged template node with an `require()`
+  to the file we generated
+
+---
+
+The extracted CSS file makes it's way through webpack.
+
+Because it's simply a css file
+any style pipeline that has been defined will be applied to that file.
+
+This means you get static extraction for free, as well as use with any CSS preprocessor
+such as Sass in our case
+
+<Notes>
+The secret is we optimize how the file is generated. b/c webpack eventually
+turns all files into concatnated bundles, there isn't any need to write the file
+to disk, only to be turned into a large css file later.
+
+So instead of that we instrument the webpack File System object and save the css files
+as "Virtual" files, only visible to webpack but act like a real file
+
+</Notes>
+
+---
+
+Styled Component API
+
+---
+
+<Split transition="👉">
+
+```js
+const Button = styled("button")`
+  color: blue;
+  padding: 0 20px;
+
+  &.size-large {
+    font-size: 120%;
+  }
+`;
+```
+
+```jsx
+const styles = require("./Button-button.module.css");
+
+function Button({ size, ...props }) {
+  return (
+    <button
+      {...props}
+      classNames={classNames(
+        styles.button,
+        styles["size-" + size]
+      )}
+    />
+  );
+}
+```
+
+<small>&</small>
+
+```css
+.button {
+  color: blue;
+  padding: 0 20px;
+}
+
+.button.size-large {
+  font-size: 120%;
+}
+```
+
+</Split>
+
+<Notes>
+In principle the component API is the same as the css tag one, the style is
+extracted and replaced with a `require`.
+
+The difference is it's wrapped in a helper that returns a react component,
+and applies a bit of a heuristic for mapping props to class names
+
+</Notes>
+
+---
+
+MOAR PRO TIPS
+
+- vscode/atom have styled-components extensions for syntax highlighting, they also work with astroturf
+
+- Static interpolations aren't the smartest, but also not dumb, e.g. you can do math
+
+- `css` along with the `:export {}` syntax lets you share values with JS
